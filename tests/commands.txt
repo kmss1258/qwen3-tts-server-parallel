@@ -1,0 +1,1 @@
+VOICE_CLONE_RUN_LIVE=1 VOICE_CLONE_BASE_URL="http://n.kami.live:19160" VOICE_CLONE_OUT_DIR="tests/voice_clone_outputs" pytest tests/test_voice_clone_live.py

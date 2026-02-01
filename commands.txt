@@ -1,0 +1,1 @@
+# docker compose up qwen3-tts-cpu
