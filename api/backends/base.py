@@ -127,12 +127,14 @@ class TTSBackend(ABC):
     async def generate_voice_clone(
         self,
         text: str,
-        ref_audio: np.ndarray,
-        ref_audio_sr: int,
+        ref_audio: Optional[np.ndarray] = None,
+        ref_audio_sr: Optional[int] = None,
         ref_text: Optional[str] = None,
         language: str = "Auto",
         x_vector_only_mode: bool = False,
         speed: float = 1.0,
+        deterministic: bool = False,
+        voice_clone_prompt: Optional[List[Any]] = None,
     ) -> Tuple[np.ndarray, int]:
         """
         Generate speech by cloning a voice from reference audio.
@@ -145,6 +147,8 @@ class TTSBackend(ABC):
             language: Language code (e.g., "English", "Chinese", "Auto")
             x_vector_only_mode: If True, use x-vector only (no ref_text needed)
             speed: Speech speed multiplier (0.25 to 4.0)
+            deterministic: If True, disable sampling for deterministic output
+            voice_clone_prompt: Precomputed prompt items for voice cloning
 
         Returns:
             Tuple of (audio_array, sample_rate)
@@ -177,3 +181,27 @@ class TTSBackend(ABC):
             NotImplementedError: If voice design is not supported by this backend
         """
         raise NotImplementedError("Voice design is not supported by this backend")
+
+    async def create_voice_clone_prompt(
+        self,
+        ref_audio: np.ndarray,
+        ref_audio_sr: int,
+        ref_text: Optional[str] = None,
+        x_vector_only_mode: bool = False,
+    ) -> List[Any]:
+        """
+        Create a reusable voice clone prompt from reference audio.
+
+        Args:
+            ref_audio: Reference audio as numpy array
+            ref_audio_sr: Sample rate of reference audio
+            ref_text: Transcript of reference audio (required for ICL mode)
+            x_vector_only_mode: If True, use x-vector only (no ref_text needed)
+
+        Returns:
+            List of prompt items usable as voice_clone_prompt
+
+        Raises:
+            NotImplementedError: If voice cloning is not supported by this backend
+        """
+        raise NotImplementedError("Voice cloning is not supported by this backend")

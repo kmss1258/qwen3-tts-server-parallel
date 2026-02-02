@@ -8,10 +8,12 @@ Implements endpoints compatible with OpenAI's TTS API specification.
 import base64
 import io
 import logging
+from dataclasses import asdict
 from typing import Optional
 
 import numpy as np
 import soundfile as sf
+import torch
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from ..structures.schemas import (
@@ -19,12 +21,14 @@ from ..structures.schemas import (
     ModelInfo,
     VoiceInfo,
     VoiceCloneRequest,
+    VoiceClonePromptRequest,
     VoiceCloneCapabilities,
     VoiceDesignRequest,
     VoiceDesignCapabilities,
 )
 from ..services.text_processing import normalize_text
 from ..services.audio_encoding import encode_audio, get_content_type
+from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +157,127 @@ def get_voice_name(voice: str) -> str:
         return VOICE_MAPPING[voice.lower()]
     # Otherwise use the voice name directly
     return voice
+
+
+def _load_prompt_items_from_bytes(prompt_bytes: bytes) -> list[VoiceClonePromptItem]:
+    try:
+        payload = torch.load(
+            io.BytesIO(prompt_bytes), map_location="cpu", weights_only=True
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_prompt",
+                "message": f"Failed to read prompt file: {e}",
+                "type": "invalid_request_error",
+            },
+        )
+
+    if not isinstance(payload, dict) or "items" not in payload:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_prompt",
+                "message": "Invalid prompt file format: missing items",
+                "type": "invalid_request_error",
+            },
+        )
+
+    items_raw = payload.get("items")
+    if not isinstance(items_raw, list) or len(items_raw) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_prompt",
+                "message": "Invalid prompt file format: empty items",
+                "type": "invalid_request_error",
+            },
+        )
+
+    items: list[VoiceClonePromptItem] = []
+    for idx, data in enumerate(items_raw):
+        if not isinstance(data, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_prompt",
+                    "message": f"Invalid prompt item format at index {idx}",
+                    "type": "invalid_request_error",
+                },
+            )
+        ref_spk = data.get("ref_spk_embedding")
+        if ref_spk is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_prompt",
+                    "message": "Missing ref_spk_embedding in prompt item",
+                    "type": "invalid_request_error",
+                },
+            )
+        if not torch.is_tensor(ref_spk):
+            ref_spk = torch.tensor(ref_spk)
+
+        ref_code = data.get("ref_code")
+        if ref_code is not None and not torch.is_tensor(ref_code):
+            ref_code = torch.tensor(ref_code)
+
+        x_vector_only_mode = bool(data.get("x_vector_only_mode", False))
+        icl_mode = bool(data.get("icl_mode", not x_vector_only_mode))
+
+        items.append(
+            VoiceClonePromptItem(
+                ref_code=ref_code,
+                ref_spk_embedding=ref_spk,
+                x_vector_only_mode=x_vector_only_mode,
+                icl_mode=icl_mode,
+                ref_text=data.get("ref_text"),
+            )
+        )
+
+    return items
+
+
+def _validate_prompt_items(items: list[VoiceClonePromptItem]) -> None:
+    for idx, item in enumerate(items):
+        if item.ref_spk_embedding is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_prompt",
+                    "message": f"Missing ref_spk_embedding at index {idx}",
+                    "type": "invalid_request_error",
+                },
+            )
+        if item.ref_spk_embedding.dim() != 1:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_prompt",
+                    "message": f"Invalid ref_spk_embedding shape at index {idx}",
+                    "type": "invalid_request_error",
+                },
+            )
+        if item.icl_mode:
+            if item.ref_code is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "invalid_prompt",
+                        "message": f"Missing ref_code for ICL mode at index {idx}",
+                        "type": "invalid_request_error",
+                    },
+                )
+            if item.ref_text is None or not str(item.ref_text).strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "invalid_prompt",
+                        "message": f"Missing ref_text for ICL mode at index {idx}",
+                        "type": "invalid_request_error",
+                    },
+                )
 
 
 async def generate_speech(
@@ -501,8 +626,22 @@ async def create_voice_clone(
                 },
             )
 
-        # Validate ICL mode requires ref_text
-        if not request.x_vector_only_mode and not request.ref_text:
+        if not request.ref_audio and not request.voice_prompt_file:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "missing_ref_audio",
+                    "message": "Provide ref_audio or voice_prompt_file.",
+                    "type": "invalid_request_error",
+                },
+            )
+
+        # Validate ICL mode requires ref_text (only when using ref_audio)
+        if (
+            request.voice_prompt_file is None
+            and not request.x_vector_only_mode
+            and not request.ref_text
+        ):
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -513,40 +652,58 @@ async def create_voice_clone(
                 },
             )
 
-        # Decode base64 audio
-        try:
-            audio_bytes = base64.b64decode(request.ref_audio)
-        except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "invalid_audio",
-                    "message": f"Failed to decode base64 audio: {e}",
-                    "type": "invalid_request_error",
-                },
-            )
+        prompt_items = None
+        ref_audio = None
+        ref_sr = None
+        if request.voice_prompt_file:
+            try:
+                prompt_bytes = base64.b64decode(request.voice_prompt_file)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "invalid_prompt",
+                        "message": f"Failed to decode base64 prompt file: {e}",
+                        "type": "invalid_request_error",
+                    },
+                )
+            prompt_items = _load_prompt_items_from_bytes(prompt_bytes)
+            _validate_prompt_items(prompt_items)
+        else:
+            # Decode base64 audio
+            try:
+                audio_bytes = base64.b64decode(request.ref_audio)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "invalid_audio",
+                        "message": f"Failed to decode base64 audio: {e}",
+                        "type": "invalid_request_error",
+                    },
+                )
 
-        # Load audio using soundfile
-        try:
-            audio_buffer = io.BytesIO(audio_bytes)
-            ref_audio, ref_sr = sf.read(audio_buffer)
+            # Load audio using soundfile
+            try:
+                audio_buffer = io.BytesIO(audio_bytes)
+                ref_audio, ref_sr = sf.read(audio_buffer)
 
-            # Convert to mono if stereo
-            if len(ref_audio.shape) > 1:
-                ref_audio = ref_audio.mean(axis=1)
+                # Convert to mono if stereo
+                if len(ref_audio.shape) > 1:
+                    ref_audio = ref_audio.mean(axis=1)
 
-            ref_audio = ref_audio.astype(np.float32)
+                ref_audio = ref_audio.astype(np.float32)
 
-        except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "audio_processing_error",
-                    "message": f"Failed to process reference audio: {e}. "
-                    "Ensure the audio is a valid WAV, MP3, or other supported format.",
-                    "type": "invalid_request_error",
-                },
-            )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "audio_processing_error",
+                        "message": f"Failed to process reference audio: {e}. "
+                        "Ensure the audio is a valid WAV, MP3, or other supported format.",
+                        "type": "invalid_request_error",
+                    },
+                )
 
         # Normalize input text
         normalized_text = normalize_text(request.input, request.normalization_options)
@@ -570,6 +727,8 @@ async def create_voice_clone(
             language=request.language or "Auto",
             x_vector_only_mode=request.x_vector_only_mode,
             speed=request.speed,
+            deterministic=request.deterministic,
+            voice_clone_prompt=prompt_items,
         )
 
         # Encode audio to requested format
@@ -592,6 +751,105 @@ async def create_voice_clone(
         raise
     except Exception as e:
         logger.error(f"Voice cloning failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "processing_error",
+                "message": str(e),
+                "type": "server_error",
+            },
+        )
+
+
+@router.post("/audio/voice-clone/prompt")
+async def create_voice_clone_prompt(request: VoiceClonePromptRequest):
+    """
+    Create a reusable voice clone prompt file (.pt).
+
+    This endpoint requires the Base model (Qwen3-TTS-12Hz-1.7B-Base).
+    """
+    try:
+        backend = await get_tts_backend()
+
+        if not backend.supports_voice_cloning():
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "voice_cloning_not_supported",
+                    "message": "Voice cloning requires the Base model (Qwen3-TTS-12Hz-1.7B-Base). "
+                    "Set TTS_MODEL_NAME=Qwen/Qwen3-TTS-12Hz-1.7B-Base environment variable and restart the server.",
+                    "type": "invalid_request_error",
+                },
+            )
+
+        if not request.x_vector_only_mode and not request.ref_text:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "missing_ref_text",
+                    "message": "ICL mode requires ref_text (transcript of reference audio). "
+                    "Either provide ref_text or set x_vector_only_mode=True.",
+                    "type": "invalid_request_error",
+                },
+            )
+
+        try:
+            audio_bytes = base64.b64decode(request.ref_audio)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_audio",
+                    "message": f"Failed to decode base64 audio: {e}",
+                    "type": "invalid_request_error",
+                },
+            )
+
+        try:
+            audio_buffer = io.BytesIO(audio_bytes)
+            ref_audio, ref_sr = sf.read(audio_buffer)
+
+            if len(ref_audio.shape) > 1:
+                ref_audio = ref_audio.mean(axis=1)
+
+            ref_audio = ref_audio.astype(np.float32)
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "audio_processing_error",
+                    "message": f"Failed to process reference audio: {e}. "
+                    "Ensure the audio is a valid WAV, MP3, or other supported format.",
+                    "type": "invalid_request_error",
+                },
+            )
+
+        prompt_items = await backend.create_voice_clone_prompt(
+            ref_audio=ref_audio,
+            ref_audio_sr=ref_sr,
+            ref_text=request.ref_text,
+            x_vector_only_mode=request.x_vector_only_mode,
+        )
+
+        payload = {"items": [asdict(item) for item in prompt_items]}
+        buffer = io.BytesIO()
+        torch.save(payload, buffer)
+        buffer.seek(0)
+
+        return Response(
+            content=buffer.getvalue(),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": "attachment; filename=voice_clone_prompt.pt",
+                "Cache-Control": "no-cache",
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Voice clone prompt creation failed: {e}")
         raise HTTPException(
             status_code=500,
             detail={

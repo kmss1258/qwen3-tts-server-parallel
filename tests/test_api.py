@@ -355,6 +355,33 @@ class TestVoiceCloneCacheEndpoints:
         assert data["enabled"] is True
 
 
+class TestVoiceClonePromptEndpoints:
+    """Tests for voice clone prompt endpoints."""
+
+    def test_voice_clone_prompt_icl_requires_ref_text(self, client, monkeypatch):
+        from unittest.mock import MagicMock
+        from api.backends import factory
+
+        mock_backend = MagicMock()
+        mock_backend.is_ready.return_value = True
+        mock_backend.supports_voice_cloning.return_value = True
+
+        factory._backend_instance = mock_backend
+
+        response = client.post(
+            "/v1/audio/voice-clone/prompt",
+            json={
+                "ref_audio": "dGVzdA==",
+                "x_vector_only_mode": False,
+            },
+        )
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "detail" in data
+        assert data["detail"]["error"] == "missing_ref_text"
+
+
 class TestVoiceDesignEndpoints:
     """Tests for voice design endpoints."""
 

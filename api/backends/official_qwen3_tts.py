@@ -357,12 +357,14 @@ class OfficialQwen3TTSBackend(TTSBackend):
     async def generate_voice_clone(
         self,
         text: str,
-        ref_audio: np.ndarray,
-        ref_audio_sr: int,
+        ref_audio: Optional[np.ndarray] = None,
+        ref_audio_sr: Optional[int] = None,
         ref_text: Optional[str] = None,
         language: str = "Auto",
         x_vector_only_mode: bool = False,
         speed: float = 1.0,
+        deterministic: bool = False,
+        voice_clone_prompt: Optional[list] = None,
     ) -> Tuple[np.ndarray, int]:
         """
         Generate speech by cloning a voice from reference audio.
@@ -375,6 +377,8 @@ class OfficialQwen3TTSBackend(TTSBackend):
             language: Language code (e.g., "English", "Chinese", "Auto")
             x_vector_only_mode: If True, use x-vector only (no ref_text needed)
             speed: Speech speed multiplier (0.25 to 4.0)
+            deterministic: If True, disable sampling for deterministic output
+            voice_clone_prompt: Precomputed prompt items for voice cloning
 
         Returns:
             Tuple of (audio_array, sample_rate)
@@ -389,32 +393,51 @@ class OfficialQwen3TTSBackend(TTSBackend):
             )
 
         try:
-            prompt_items = None
-            ref_text_for_prompt = None if x_vector_only_mode else ref_text
-            cache_key = self._build_voice_clone_cache_key(
-                ref_audio,
-                ref_audio_sr,
-                ref_text_for_prompt,
-                x_vector_only_mode,
-            )
-
-            if cache_key is not None:
-                prompt_items = self._get_voice_clone_cache(cache_key)
-
+            prompt_items = voice_clone_prompt
             if prompt_items is None:
-                prompt_items = self.model.create_voice_clone_prompt(
-                    ref_audio=(ref_audio, ref_audio_sr),
-                    ref_text=ref_text_for_prompt,
-                    x_vector_only_mode=x_vector_only_mode,
+                if ref_audio is None or ref_audio_sr is None:
+                    raise RuntimeError(
+                        "ref_audio is required when voice_clone_prompt is not provided"
+                    )
+                ref_text_for_prompt = None if x_vector_only_mode else ref_text
+                cache_key = self._build_voice_clone_cache_key(
+                    ref_audio,
+                    ref_audio_sr,
+                    ref_text_for_prompt,
+                    x_vector_only_mode,
                 )
 
                 if cache_key is not None:
-                    self._put_voice_clone_cache(cache_key, prompt_items)
+                    prompt_items = self._get_voice_clone_cache(cache_key)
+
+                if prompt_items is None:
+                    prompt_items = self.model.create_voice_clone_prompt(
+                        ref_audio=(ref_audio, ref_audio_sr),
+                        ref_text=ref_text_for_prompt,
+                        x_vector_only_mode=x_vector_only_mode,
+                    )
+
+                    if cache_key is not None:
+                        self._put_voice_clone_cache(cache_key, prompt_items)
+
+            generate_kwargs = {}
+            if deterministic:
+                generate_kwargs.update(
+                    do_sample=False,
+                    top_k=1,
+                    top_p=1.0,
+                    temperature=1.0,
+                    subtalker_dosample=False,
+                    subtalker_top_k=1,
+                    subtalker_top_p=1.0,
+                    subtalker_temperature=1.0,
+                )
 
             wavs, sr = self.model.generate_voice_clone(
                 text=text,
                 language=language,
                 voice_clone_prompt=prompt_items,
+                **generate_kwargs,
             )
 
             audio = wavs[0]
@@ -493,6 +516,46 @@ class OfficialQwen3TTSBackend(TTSBackend):
         self._voice_clone_cache.move_to_end(cache_key)
         while len(self._voice_clone_cache) > self._voice_clone_cache_size:
             self._voice_clone_cache.popitem(last=False)
+
+    async def create_voice_clone_prompt(
+        self,
+        ref_audio: np.ndarray,
+        ref_audio_sr: int,
+        ref_text: Optional[str] = None,
+        x_vector_only_mode: bool = False,
+    ) -> list:
+        if not self._ready:
+            await self.initialize()
+
+        if not self.supports_voice_cloning():
+            raise RuntimeError(
+                "Voice cloning requires the Base model (Qwen3-TTS-12Hz-1.7B-Base). "
+                "The current model does not support voice cloning."
+            )
+
+        ref_text_for_prompt = None if x_vector_only_mode else ref_text
+        cache_key = self._build_voice_clone_cache_key(
+            ref_audio,
+            ref_audio_sr,
+            ref_text_for_prompt,
+            x_vector_only_mode,
+        )
+
+        if cache_key is not None:
+            prompt_items = self._get_voice_clone_cache(cache_key)
+            if prompt_items is not None:
+                return prompt_items
+
+        prompt_items = self.model.create_voice_clone_prompt(
+            ref_audio=(ref_audio, ref_audio_sr),
+            ref_text=ref_text_for_prompt,
+            x_vector_only_mode=x_vector_only_mode,
+        )
+
+        if cache_key is not None:
+            self._put_voice_clone_cache(cache_key, prompt_items)
+
+        return prompt_items
 
     async def generate_voice_design(
         self,

@@ -166,12 +166,14 @@ class MultiModelQwen3TTSBackend(TTSBackend):
     async def generate_voice_clone(
         self,
         text: str,
-        ref_audio: np.ndarray,
-        ref_audio_sr: int,
+        ref_audio: Optional[np.ndarray] = None,
+        ref_audio_sr: Optional[int] = None,
         ref_text: Optional[str] = None,
         language: str = "Auto",
         x_vector_only_mode: bool = False,
         speed: float = 1.0,
+        deterministic: bool = False,
+        voice_clone_prompt: Optional[List[Any]] = None,
     ) -> Tuple[np.ndarray, int]:
         if self.base_backend is None:
             raise RuntimeError("Voice cloning is not configured in multi-model mode")
@@ -183,6 +185,24 @@ class MultiModelQwen3TTSBackend(TTSBackend):
             language=language,
             x_vector_only_mode=x_vector_only_mode,
             speed=speed,
+            deterministic=deterministic,
+            voice_clone_prompt=voice_clone_prompt,
+        )
+
+    async def create_voice_clone_prompt(
+        self,
+        ref_audio: np.ndarray,
+        ref_audio_sr: int,
+        ref_text: Optional[str] = None,
+        x_vector_only_mode: bool = False,
+    ) -> List[Any]:
+        if self.base_backend is None:
+            raise RuntimeError("Voice cloning is not configured in multi-model mode")
+        return await self.base_backend.create_voice_clone_prompt(
+            ref_audio=ref_audio,
+            ref_audio_sr=ref_audio_sr,
+            ref_text=ref_text,
+            x_vector_only_mode=x_vector_only_mode,
         )
 
     async def generate_voice_design(

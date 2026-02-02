@@ -1,0 +1,5 @@
+/api/services/__pycache__
+/api/structures/__pycache__
+/qwen_tts/__pycache__
+/qwen_tts/core/__pycache__
+*.pyc
