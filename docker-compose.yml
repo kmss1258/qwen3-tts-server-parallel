@@ -41,12 +41,12 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: [ '0', '2' ]
+              device_ids: [ '0', '2', '3' ]
               capabilities: [ gpu ]
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:19160/health" ]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 3
       start_period: 120s
