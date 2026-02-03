@@ -28,4 +28,4 @@
 - Multi-GPU backend uses round-robin per role (`speech/base/voice_design`).
 - `WORKERS>1` increases concurrency but each worker loads its own model copies (VRAM impact).
 - Qwen3 TTS generate now accepts `eos_token_id` as `int` or `list[int]`; suppress_tokens and truncation respect all EOS IDs.
-- EOS default is typically `2157`, with additional EOS IDs added for stopping (see `resolved_eos_token_ids` in `qwen_tts/core/models/modeling_qwen3_tts.py`).
+- EOS default is typically **`1524`**, `2157`, with additional EOS IDs added for stopping (see `resolved_eos_token_ids` in `qwen_tts/core/models/modeling_qwen3_tts.py`).
