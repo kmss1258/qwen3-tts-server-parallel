@@ -17,7 +17,7 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 import huggingface_hub
 import torch
@@ -2325,10 +2325,19 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
         subtalker_top_k: int = 50,
         subtalker_top_p: float = 1.0,
         subtalker_temperature: float = 0.9,
-        eos_token_id: Optional[int] = None,
+        eos_token_id: Optional[Union[int, list[int]]] = None,
         repetition_penalty: float = 1.1,
         **kwargs,
     ):
+        default_eos_token_ids = [2150, 2157, 151670, 151673, 151645, 151643]
+        resolved_eos_token_ids = (
+            eos_token_id if eos_token_id is not None else default_eos_token_ids
+        )
+        if isinstance(resolved_eos_token_ids, int):
+            eos_token_id_list = [resolved_eos_token_ids]
+        else:
+            eos_token_id_list = list(resolved_eos_token_ids)
+
         talker_kwargs = {
             "max_new_tokens": max_new_tokens,
             "min_new_tokens": 2,
@@ -2340,9 +2349,7 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
             "subtalker_top_k": subtalker_top_k,
             "subtalker_top_p": subtalker_top_p,
             "subtalker_temperature": subtalker_temperature,
-            "eos_token_id": eos_token_id
-            if eos_token_id is not None
-            else self.config.talker_config.codec_eos_token_id,
+            "eos_token_id": resolved_eos_token_ids,
             "repetition_penalty": repetition_penalty,
             "suppress_tokens": [
                 i
@@ -2350,7 +2357,7 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
                     self.config.talker_config.vocab_size - 1024,
                     self.config.talker_config.vocab_size,
                 )
-                if i not in (self.config.talker_config.codec_eos_token_id,)
+                if i not in eos_token_id_list
             ],
             "output_hidden_states": getattr(kwargs, "output_hidden_states", True),
             "return_dict_in_generate": getattr(kwargs, "return_dict_in_generate", True),
