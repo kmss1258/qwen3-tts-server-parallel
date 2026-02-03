@@ -1,1 +1,7 @@
+# cd ~/workspace/temp/qwen3-tts-server-parallel
+# docker compose up qwen3-tts-gpu
 # docker compose up qwen3-tts-cpu
+# qwen3-tts-gpu default INFO
+# LOG_LEVEL=INFO DEBUG_GENERATE=0 docker compose up -d qwen3-tts-gpu
+# enable debug generate logs
+# LOG_LEVEL=DEBUG DEBUG_GENERATE=1 DEBUG_GENERATE_EVERY=50 docker compose up -d qwen3-tts-gpu

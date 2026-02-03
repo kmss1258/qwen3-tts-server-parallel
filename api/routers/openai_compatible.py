@@ -8,6 +8,7 @@ Implements endpoints compatible with OpenAI's TTS API specification.
 import base64
 import io
 import logging
+import time
 from dataclasses import asdict
 from typing import Optional
 
@@ -612,6 +613,7 @@ async def create_voice_clone(
     - X-Vector mode (x_vector_only_mode=True): No transcript needed, good quality
     """
     try:
+        started_at = time.perf_counter()
         backend = await get_tts_backend()
 
         # Check if voice cloning is supported
@@ -718,6 +720,17 @@ async def create_voice_clone(
                 },
             )
 
+        logger.info(
+            "voice_clone_start prompt_file=%s x_vector_only=%s deterministic=%s language=%s format=%s input_len=%s ref_text_len=%s",
+            bool(request.voice_prompt_file),
+            request.x_vector_only_mode,
+            request.deterministic,
+            request.language or "Auto",
+            request.response_format,
+            len(normalized_text),
+            len(request.ref_text or ""),
+        )
+
         # Generate voice clone
         audio, sample_rate = await backend.generate_voice_clone(
             text=normalized_text,
@@ -736,6 +749,14 @@ async def create_voice_clone(
 
         # Get content type
         content_type = get_content_type(request.response_format)
+
+        elapsed = time.perf_counter() - started_at
+        logger.info(
+            "voice_clone_done seconds=%.3f sample_rate=%s bytes=%s",
+            elapsed,
+            sample_rate,
+            len(audio_bytes),
+        )
 
         # Return audio response
         return Response(
@@ -769,6 +790,7 @@ async def create_voice_clone_prompt(request: VoiceClonePromptRequest):
     This endpoint requires the Base model (Qwen3-TTS-12Hz-1.7B-Base).
     """
     try:
+        started_at = time.perf_counter()
         backend = await get_tts_backend()
 
         if not backend.supports_voice_cloning():
@@ -825,6 +847,12 @@ async def create_voice_clone_prompt(request: VoiceClonePromptRequest):
                 },
             )
 
+        logger.info(
+            "voice_clone_prompt_start x_vector_only=%s ref_text_len=%s",
+            request.x_vector_only_mode,
+            len(request.ref_text or ""),
+        )
+
         prompt_items = await backend.create_voice_clone_prompt(
             ref_audio=ref_audio,
             ref_audio_sr=ref_sr,
@@ -836,6 +864,13 @@ async def create_voice_clone_prompt(request: VoiceClonePromptRequest):
         buffer = io.BytesIO()
         torch.save(payload, buffer)
         buffer.seek(0)
+
+        elapsed = time.perf_counter() - started_at
+        logger.info(
+            "voice_clone_prompt_done seconds=%.3f bytes=%s",
+            elapsed,
+            len(buffer.getvalue()),
+        )
 
         return Response(
             content=buffer.getvalue(),
@@ -887,6 +922,7 @@ async def create_voice_design(
     This endpoint requires the VoiceDesign model (Qwen3-TTS-12Hz-1.7B-VoiceDesign).
     """
     try:
+        started_at = time.perf_counter()
         backend = await get_tts_backend()
 
         if not backend.supports_voice_design():
@@ -914,6 +950,14 @@ async def create_voice_design(
 
         instruct = request.instruct or ""
 
+        logger.info(
+            "voice_design_start language=%s format=%s input_len=%s instruct_len=%s",
+            request.language or "Auto",
+            request.response_format,
+            len(normalized_text),
+            len(instruct),
+        )
+
         audio, sample_rate = await backend.generate_voice_design(
             text=normalized_text,
             instruct=instruct,
@@ -923,6 +967,14 @@ async def create_voice_design(
 
         audio_bytes = encode_audio(audio, request.response_format, sample_rate)
         content_type = get_content_type(request.response_format)
+
+        elapsed = time.perf_counter() - started_at
+        logger.info(
+            "voice_design_done seconds=%.3f sample_rate=%s bytes=%s",
+            elapsed,
+            sample_rate,
+            len(audio_bytes),
+        )
 
         return Response(
             content=audio_bytes,

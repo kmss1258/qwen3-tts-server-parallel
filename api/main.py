@@ -20,8 +20,10 @@ from fastapi.responses import HTMLResponse, FileResponse, Response
 from .routers.openai_compatible import router as openai_router
 
 # Configure logging
+log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
