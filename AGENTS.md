@@ -27,3 +27,4 @@
 ## Notes
 - Multi-GPU backend uses round-robin per role (`speech/base/voice_design`).
 - `WORKERS>1` increases concurrency but each worker loads its own model copies (VRAM impact).
+- Qwen3 TTS generate now accepts `eos_token_id` as `int` or `list[int]`; suppress_tokens and truncation respect all EOS IDs.

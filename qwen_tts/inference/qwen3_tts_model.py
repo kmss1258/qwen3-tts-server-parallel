@@ -373,13 +373,13 @@ class Qwen3TTSModel:
         hard_defaults = dict(
             do_sample=True,
             top_k=50,
-            top_p=0.95,
-            temperature=0.87,
-            repetition_penalty=1.1,
+            top_p=1.0,
+            temperature=0.9,
+            repetition_penalty=1.05,
             subtalker_dosample=True,
             subtalker_top_k=50,
-            subtalker_top_p=0.95,
-            subtalker_temperature=0.87,
+            subtalker_top_p=1.0,
+            subtalker_temperature=0.9,
             max_new_tokens=2048,
         )
 

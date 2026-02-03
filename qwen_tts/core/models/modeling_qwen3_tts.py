@@ -17,7 +17,7 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Callable, Optional, Union
+from typing import Callable, List, Optional, Union
 
 import huggingface_hub
 import torch
@@ -2325,18 +2325,20 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
         subtalker_top_k: int = 50,
         subtalker_top_p: float = 1.0,
         subtalker_temperature: float = 0.9,
-        eos_token_id: Optional[Union[int, list[int]]] = None,
-        repetition_penalty: float = 1.1,
+        eos_token_id: Optional[Union[int, List[int]]] = None,
+        repetition_penalty: float = 1.05,
         **kwargs,
     ):
-        default_eos_token_ids = [2150, 2157, 151670, 151673, 151645, 151643]
-        resolved_eos_token_ids = (
-            eos_token_id if eos_token_id is not None else default_eos_token_ids
-        )
-        if isinstance(resolved_eos_token_ids, int):
-            eos_token_id_list = [resolved_eos_token_ids]
+        if eos_token_id is not None:
+            resolved_eos_token_ids = eos_token_id
         else:
-            eos_token_id_list = list(resolved_eos_token_ids)
+            resolved_eos_token_ids = [2150, 2157, 151670, 151673, 151645, 151643]
+
+        eos_list = (
+            resolved_eos_token_ids
+            if isinstance(resolved_eos_token_ids, list)
+            else [resolved_eos_token_ids]
+        )
 
         talker_kwargs = {
             "max_new_tokens": max_new_tokens,
@@ -2357,7 +2359,7 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
                     self.config.talker_config.vocab_size - 1024,
                     self.config.talker_config.vocab_size,
                 )
-                if i not in eos_token_id_list
+                if i not in eos_list
             ],
             "output_hidden_states": getattr(kwargs, "output_hidden_states", True),
             "return_dict_in_generate": getattr(kwargs, "return_dict_in_generate", True),
@@ -2671,7 +2673,8 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
         )[:, :-1]
 
         first_codebook = talker_codes[:, :, 0]
-        is_stop_token = first_codebook == self.config.talker_config.codec_eos_token_id
+        eos_tensor = torch.tensor(eos_list, device=first_codebook.device)
+        is_stop_token = torch.isin(first_codebook, eos_tensor)
         stop_indices = torch.argmax(is_stop_token.int(), dim=1)
         has_stop_token = is_stop_token.any(dim=1)
         effective_lengths = torch.where(
