@@ -5,9 +5,11 @@ OpenAI-compatible router for text-to-speech API.
 Implements endpoints compatible with OpenAI's TTS API specification.
 """
 
+import asyncio
 import base64
 import io
 import logging
+import os
 import time
 from dataclasses import asdict
 from typing import Optional
@@ -32,6 +34,9 @@ from ..services.audio_encoding import encode_audio, get_content_type
 from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
 
 logger = logging.getLogger(__name__)
+
+_inference_semaphore: Optional[asyncio.Semaphore] = None
+_inference_semaphore_limit: Optional[int] = None
 
 router = APIRouter(
     tags=["OpenAI Compatible TTS"],
@@ -149,6 +154,59 @@ async def get_tts_backend():
         await initialize_backend()
 
     return backend
+
+
+def _resolve_inference_limit(backend) -> int:
+    override = os.getenv("TTS_INFER_CONCURRENCY", "").strip()
+    if override:
+        try:
+            limit = int(override)
+            if limit < 1:
+                raise ValueError
+            return limit
+        except ValueError:
+            logger.warning("Invalid TTS_INFER_CONCURRENCY=%s; using auto", override)
+
+    device_count = None
+    device_ids = getattr(backend, "device_ids", None)
+    if isinstance(device_ids, list) and device_ids:
+        device_count = len(device_ids)
+
+    if not device_count or device_count < 1:
+        device_count = 1
+
+    try:
+        workers = int(os.getenv("WORKERS", "1"))
+    except ValueError:
+        workers = 1
+    if workers < 1:
+        workers = 1
+
+    limit = max(1, device_count // workers)
+    if device_count < workers:
+        logger.warning(
+            "WORKERS=%s exceeds visible_gpus=%s; per-worker concurrency capped at 1",
+            workers,
+            device_count,
+        )
+    return limit
+
+
+def _get_inference_semaphore(backend) -> asyncio.Semaphore:
+    global _inference_semaphore
+    global _inference_semaphore_limit
+
+    limit = _resolve_inference_limit(backend)
+    if _inference_semaphore is None or _inference_semaphore_limit != limit:
+        _inference_semaphore = asyncio.Semaphore(limit)
+        _inference_semaphore_limit = limit
+        logger.info(
+            "inference_concurrency_limit=%s (workers=%s override=%s)",
+            limit,
+            os.getenv("WORKERS", "1"),
+            os.getenv("TTS_INFER_CONCURRENCY", "auto") or "auto",
+        )
+    return _inference_semaphore
 
 
 def get_voice_name(voice: str) -> str:
@@ -302,19 +360,21 @@ async def generate_speech(
         Tuple of (audio_array, sample_rate)
     """
     backend = await get_tts_backend()
+    semaphore = _get_inference_semaphore(backend)
 
     # Map voice name
     voice_name = get_voice_name(voice)
 
     # Generate speech using the backend
     try:
-        audio, sr = await backend.generate_speech(
-            text=text,
-            voice=voice_name,
-            language=language,
-            instruct=instruct,
-            speed=speed,
-        )
+        async with semaphore:
+            audio, sr = await backend.generate_speech(
+                text=text,
+                voice=voice_name,
+                language=language,
+                instruct=instruct,
+                speed=speed,
+            )
 
         return audio, sr
 
@@ -733,18 +793,20 @@ async def create_voice_clone(
         )
 
         # Generate voice clone
-        audio, sample_rate = await backend.generate_voice_clone(
-            text=normalized_text,
-            ref_audio=ref_audio,
-            ref_audio_sr=ref_sr,
-            ref_text=request.ref_text,
-            language=request.language or "Auto",
-            x_vector_only_mode=request.x_vector_only_mode,
-            speed=request.speed,
-            deterministic=request.deterministic,
-            max_new_tokens=request.max_new_tokens,
-            voice_clone_prompt=prompt_items,
-        )
+        semaphore = _get_inference_semaphore(backend)
+        async with semaphore:
+            audio, sample_rate = await backend.generate_voice_clone(
+                text=normalized_text,
+                ref_audio=ref_audio,
+                ref_audio_sr=ref_sr,
+                ref_text=request.ref_text,
+                language=request.language or "Auto",
+                x_vector_only_mode=request.x_vector_only_mode,
+                speed=request.speed,
+                deterministic=request.deterministic,
+                max_new_tokens=request.max_new_tokens,
+                voice_clone_prompt=prompt_items,
+            )
 
         # Encode audio to requested format
         audio_bytes = encode_audio(audio, request.response_format, sample_rate)
@@ -855,12 +917,14 @@ async def create_voice_clone_prompt(request: VoiceClonePromptRequest):
             len(request.ref_text or ""),
         )
 
-        prompt_items = await backend.create_voice_clone_prompt(
-            ref_audio=ref_audio,
-            ref_audio_sr=ref_sr,
-            ref_text=request.ref_text,
-            x_vector_only_mode=request.x_vector_only_mode,
-        )
+        semaphore = _get_inference_semaphore(backend)
+        async with semaphore:
+            prompt_items = await backend.create_voice_clone_prompt(
+                ref_audio=ref_audio,
+                ref_audio_sr=ref_sr,
+                ref_text=request.ref_text,
+                x_vector_only_mode=request.x_vector_only_mode,
+            )
 
         payload = {"items": [asdict(item) for item in prompt_items]}
         buffer = io.BytesIO()
@@ -961,13 +1025,15 @@ async def create_voice_design(
             request.max_new_tokens,
         )
 
-        audio, sample_rate = await backend.generate_voice_design(
-            text=normalized_text,
-            instruct=instruct,
-            language=request.language or "Auto",
-            speed=request.speed,
-            max_new_tokens=request.max_new_tokens,
-        )
+        semaphore = _get_inference_semaphore(backend)
+        async with semaphore:
+            audio, sample_rate = await backend.generate_voice_design(
+                text=normalized_text,
+                instruct=instruct,
+                language=request.language or "Auto",
+                speed=request.speed,
+                max_new_tokens=request.max_new_tokens,
+            )
 
         audio_bytes = encode_audio(audio, request.response_format, sample_rate)
         content_type = get_content_type(request.response_format)
