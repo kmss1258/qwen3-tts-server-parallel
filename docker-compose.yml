@@ -14,7 +14,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=19160
-      - WORKERS=2
+      - WORKERS=1
       - CORS_ORIGINS=*
       - TTS_BACKEND=official
       - TTS_MODEL_NAME=Qwen/Qwen3-TTS-12Hz-1.7B-Base
