@@ -108,13 +108,13 @@ class VLLMOmniQwen3TTSBackend(TTSBackend):
                 # Pre-create sampling params for reuse
                 self.sampling_params_list = [
                     SamplingParams(
-                        temperature=0.87,
-                        top_p=0.95,
+                        temperature=0.9,
+                        top_p=1.0,
                         top_k=50,
                         max_tokens=self.max_tokens,
                         seed=self.seed,
                         detokenize=False,
-                        repetition_penalty=1.1,
+                        repetition_penalty=1.05,
                     )
                 ]
 
