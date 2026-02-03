@@ -25,7 +25,7 @@ services:
       - TTS_BASE_MODEL_NAME=Qwen/Qwen3-TTS-12Hz-1.7B-Base
       - TTS_VOICE_DESIGN_MODEL_NAME=Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
       - TTS_WARMUP_ON_START=false
-      - TTS_MAX_NEW_TOKENS=${TTS_MAX_NEW_TOKENS:-1024}
+      - TTS_MAX_NEW_TOKENS=${TTS_MAX_NEW_TOKENS:-128}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DEBUG_GENERATE=${DEBUG_GENERATE:-0}
       - DEBUG_GENERATE_EVERY=${DEBUG_GENERATE_EVERY:-50}
@@ -115,7 +115,7 @@ services:
       - TTS_SPEECH_MODEL_NAME=none
       - TTS_BASE_MODEL_NAME=Qwen/Qwen3-TTS-12Hz-1.7B-Base
       - TTS_VOICE_DESIGN_MODEL_NAME=Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
-      - TTS_MAX_NEW_TOKENS=${TTS_MAX_NEW_TOKENS:-1024}
+      - TTS_MAX_NEW_TOKENS=${TTS_MAX_NEW_TOKENS:-128}
     volumes:
       # Mount source for live edits (no rebuild)
       - ./:/app
