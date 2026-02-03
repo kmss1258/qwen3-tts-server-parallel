@@ -29,7 +29,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DEBUG_GENERATE=${DEBUG_GENERATE:-0}
       - DEBUG_GENERATE_EVERY=${DEBUG_GENERATE_EVERY:-50}
-      - NVIDIA_VISIBLE_DEVICES=0,2
+      # - NVIDIA_VISIBLE_DEVICES=0,2,3
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       # Mount source for live edits (no rebuild)
