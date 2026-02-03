@@ -732,6 +732,8 @@ class Qwen3TTSModel:
                 sum(token_counts),
                 token_counts,
             )
+            for i, codes in enumerate(talker_codes_list):
+                logger.debug("generate_tokens sample=%s tokens=%s", i, codes.tolist())
 
         codes_for_decode = []
         for i, codes in enumerate(talker_codes_list):
@@ -870,6 +872,8 @@ class Qwen3TTSModel:
                 sum(token_counts),
                 token_counts,
             )
+            for i, codes in enumerate(talker_codes_list):
+                logger.debug("generate_tokens sample=%s tokens=%s", i, codes.tolist())
 
         wavs, fs = self.model.speech_tokenizer.decode(
             [{"audio_codes": c} for c in talker_codes_list]
@@ -1001,6 +1005,15 @@ class Qwen3TTSModel:
             non_streaming_mode=non_streaming_mode,
             **gen_kwargs,
         )
+        if self.debug_generate:
+            token_counts = [int(codes.shape[0]) for codes in talker_codes_list]
+            logger.debug(
+                "generate_done tokens_total=%s tokens_per_sample=%s",
+                sum(token_counts),
+                token_counts,
+            )
+            for i, codes in enumerate(talker_codes_list):
+                logger.debug("generate_tokens sample=%s tokens=%s", i, codes.tolist())
 
         wavs, fs = self.model.speech_tokenizer.decode(
             [{"audio_codes": c} for c in talker_codes_list]
