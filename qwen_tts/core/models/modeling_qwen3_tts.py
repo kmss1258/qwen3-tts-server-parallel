@@ -2332,7 +2332,8 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
         if eos_token_id is not None:
             resolved_eos_token_ids = eos_token_id
         else:
-            resolved_eos_token_ids = [1524, 1657, 2150, 2157, 151670, 151673, 151645, 151643]
+            # resolved_eos_token_ids = [1524, 1657, 2150, 2157, 151670, 151673, 151645, 151643]
+            resolved_eos_token_ids = [2157, 151670, 151673, 151645, 151643]
 
         eos_list = (
             resolved_eos_token_ids
