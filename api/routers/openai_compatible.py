@@ -721,7 +721,7 @@ async def create_voice_clone(
             )
 
         logger.info(
-            "voice_clone_start prompt_file=%s x_vector_only=%s deterministic=%s language=%s format=%s input_len=%s ref_text_len=%s",
+            "voice_clone_start prompt_file=%s x_vector_only=%s deterministic=%s language=%s format=%s input_len=%s ref_text_len=%s max_new_tokens=%s",
             bool(request.voice_prompt_file),
             request.x_vector_only_mode,
             request.deterministic,
@@ -729,6 +729,7 @@ async def create_voice_clone(
             request.response_format,
             len(normalized_text),
             len(request.ref_text or ""),
+            request.max_new_tokens,
         )
 
         # Generate voice clone
@@ -741,6 +742,7 @@ async def create_voice_clone(
             x_vector_only_mode=request.x_vector_only_mode,
             speed=request.speed,
             deterministic=request.deterministic,
+            max_new_tokens=request.max_new_tokens,
             voice_clone_prompt=prompt_items,
         )
 
@@ -951,11 +953,12 @@ async def create_voice_design(
         instruct = request.instruct or ""
 
         logger.info(
-            "voice_design_start language=%s format=%s input_len=%s instruct_len=%s",
+            "voice_design_start language=%s format=%s input_len=%s instruct_len=%s max_new_tokens=%s",
             request.language or "Auto",
             request.response_format,
             len(normalized_text),
             len(instruct),
+            request.max_new_tokens,
         )
 
         audio, sample_rate = await backend.generate_voice_design(
@@ -963,6 +966,7 @@ async def create_voice_design(
             instruct=instruct,
             language=request.language or "Auto",
             speed=request.speed,
+            max_new_tokens=request.max_new_tokens,
         )
 
         audio_bytes = encode_audio(audio, request.response_format, sample_rate)

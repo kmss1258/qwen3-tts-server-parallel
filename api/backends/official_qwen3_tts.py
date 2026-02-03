@@ -51,6 +51,22 @@ class OfficialQwen3TTSBackend(TTSBackend):
             os.getenv("TTS_VOICE_CLONE_CACHE_SIZE", "32")
         )
         self._voice_clone_cache_ttl = float(os.getenv("TTS_VOICE_CLONE_CACHE_TTL", "0"))
+        self._max_new_tokens = self._read_env_int("TTS_MAX_NEW_TOKENS", 1024)
+
+    @staticmethod
+    def _read_env_int(name: str, default: int, min_value: int = 1) -> int:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            logger.warning("Invalid %s=%s; using %s", name, raw, default)
+            return default
+        if value < min_value:
+            logger.warning("Invalid %s=%s; using %s", name, raw, default)
+            return default
+        return value
 
     async def initialize(self) -> None:
         """Initialize the backend and load the model."""
@@ -364,6 +380,7 @@ class OfficialQwen3TTSBackend(TTSBackend):
         x_vector_only_mode: bool = False,
         speed: float = 1.0,
         deterministic: bool = False,
+        max_new_tokens: Optional[int] = None,
         voice_clone_prompt: Optional[list] = None,
     ) -> Tuple[np.ndarray, int]:
         """
@@ -378,6 +395,7 @@ class OfficialQwen3TTSBackend(TTSBackend):
             x_vector_only_mode: If True, use x-vector only (no ref_text needed)
             speed: Speech speed multiplier (0.25 to 4.0)
             deterministic: If True, disable sampling for deterministic output
+            max_new_tokens: Maximum number of new codec tokens to generate
             voice_clone_prompt: Precomputed prompt items for voice cloning
 
         Returns:
@@ -421,6 +439,11 @@ class OfficialQwen3TTSBackend(TTSBackend):
                         self._put_voice_clone_cache(cache_key, prompt_items)
 
             generate_kwargs = {}
+            resolved_max_new_tokens = (
+                max_new_tokens if max_new_tokens is not None else self._max_new_tokens
+            )
+            if resolved_max_new_tokens is not None:
+                generate_kwargs["max_new_tokens"] = resolved_max_new_tokens
             if deterministic:
                 generate_kwargs.update(
                     do_sample=False,
@@ -563,6 +586,7 @@ class OfficialQwen3TTSBackend(TTSBackend):
         instruct: Optional[str] = None,
         language: str = "Auto",
         speed: float = 1.0,
+        max_new_tokens: Optional[int] = None,
     ) -> Tuple[np.ndarray, int]:
         """
         Generate speech using the voice design model.
@@ -572,6 +596,7 @@ class OfficialQwen3TTSBackend(TTSBackend):
             instruct: Natural-language description of the desired voice/style
             language: Language code (e.g., "English", "Chinese", "Auto")
             speed: Speech speed multiplier (0.25 to 4.0)
+            max_new_tokens: Maximum number of new codec tokens to generate
 
         Returns:
             Tuple of (audio_array, sample_rate)
@@ -586,10 +611,18 @@ class OfficialQwen3TTSBackend(TTSBackend):
             )
 
         try:
+            generate_kwargs = {}
+            resolved_max_new_tokens = (
+                max_new_tokens if max_new_tokens is not None else self._max_new_tokens
+            )
+            if resolved_max_new_tokens is not None:
+                generate_kwargs["max_new_tokens"] = resolved_max_new_tokens
+
             wavs, sr = self.model.generate_voice_design(
                 text=text,
                 instruct=instruct or "",
                 language=language,
+                **generate_kwargs,
             )
 
             audio = wavs[0]

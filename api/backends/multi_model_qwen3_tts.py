@@ -173,6 +173,7 @@ class MultiModelQwen3TTSBackend(TTSBackend):
         x_vector_only_mode: bool = False,
         speed: float = 1.0,
         deterministic: bool = False,
+        max_new_tokens: Optional[int] = None,
         voice_clone_prompt: Optional[List[Any]] = None,
     ) -> Tuple[np.ndarray, int]:
         if self.base_backend is None:
@@ -186,6 +187,7 @@ class MultiModelQwen3TTSBackend(TTSBackend):
             x_vector_only_mode=x_vector_only_mode,
             speed=speed,
             deterministic=deterministic,
+            max_new_tokens=max_new_tokens,
             voice_clone_prompt=voice_clone_prompt,
         )
 
@@ -211,6 +213,7 @@ class MultiModelQwen3TTSBackend(TTSBackend):
         instruct: Optional[str] = None,
         language: str = "Auto",
         speed: float = 1.0,
+        max_new_tokens: Optional[int] = None,
     ) -> Tuple[np.ndarray, int]:
         if self.voice_design_backend is None:
             raise RuntimeError("Voice design is not configured in multi-model mode")
@@ -219,4 +222,5 @@ class MultiModelQwen3TTSBackend(TTSBackend):
             instruct=instruct,
             language=language,
             speed=speed,
+            max_new_tokens=max_new_tokens,
         )

@@ -134,6 +134,7 @@ class TTSBackend(ABC):
         x_vector_only_mode: bool = False,
         speed: float = 1.0,
         deterministic: bool = False,
+        max_new_tokens: Optional[int] = None,
         voice_clone_prompt: Optional[List[Any]] = None,
     ) -> Tuple[np.ndarray, int]:
         """
@@ -148,6 +149,7 @@ class TTSBackend(ABC):
             x_vector_only_mode: If True, use x-vector only (no ref_text needed)
             speed: Speech speed multiplier (0.25 to 4.0)
             deterministic: If True, disable sampling for deterministic output
+            max_new_tokens: Maximum number of new codec tokens to generate
             voice_clone_prompt: Precomputed prompt items for voice cloning
 
         Returns:
@@ -164,6 +166,7 @@ class TTSBackend(ABC):
         instruct: Optional[str] = None,
         language: str = "Auto",
         speed: float = 1.0,
+        max_new_tokens: Optional[int] = None,
     ) -> Tuple[np.ndarray, int]:
         """
         Generate speech using the voice design model.
@@ -173,6 +176,7 @@ class TTSBackend(ABC):
             instruct: Natural-language description of the desired voice/style
             language: Language code (e.g., "English", "Chinese", "Auto")
             speed: Speech speed multiplier (0.25 to 4.0)
+            max_new_tokens: Maximum number of new codec tokens to generate
 
         Returns:
             Tuple of (audio_array, sample_rate)

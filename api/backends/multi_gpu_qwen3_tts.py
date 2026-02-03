@@ -167,6 +167,7 @@ class MultiGpuMultiModelBackend(TTSBackend):
         x_vector_only_mode: bool = False,
         speed: float = 1.0,
         deterministic: bool = False,
+        max_new_tokens: Optional[int] = None,
         voice_clone_prompt: Optional[List[Any]] = None,
     ) -> Tuple[np.ndarray, int]:
         backend = self._next_backend("base", self.base_backends)
@@ -179,6 +180,7 @@ class MultiGpuMultiModelBackend(TTSBackend):
             x_vector_only_mode=x_vector_only_mode,
             speed=speed,
             deterministic=deterministic,
+            max_new_tokens=max_new_tokens,
             voice_clone_prompt=voice_clone_prompt,
         )
 
@@ -203,6 +205,7 @@ class MultiGpuMultiModelBackend(TTSBackend):
         instruct: Optional[str] = None,
         language: str = "Auto",
         speed: float = 1.0,
+        max_new_tokens: Optional[int] = None,
     ) -> Tuple[np.ndarray, int]:
         backend = self._next_backend("voice_design", self.voice_design_backends)
         return await backend.generate_voice_design(
@@ -210,6 +213,7 @@ class MultiGpuMultiModelBackend(TTSBackend):
             instruct=instruct,
             language=language,
             speed=speed,
+            max_new_tokens=max_new_tokens,
         )
 
     def get_backend_name(self) -> str:

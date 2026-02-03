@@ -146,6 +146,12 @@ class VoiceCloneRequest(BaseModel):
         le=4.0,
         description="The speed of the generated audio. Select a value from 0.25 to 4.0.",
     )
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=4096,
+        description="Maximum number of new codec tokens to generate.",
+    )
     normalization_options: Optional[NormalizationOptions] = Field(
         default_factory=NormalizationOptions,
         description="Options for the text normalization system",
@@ -196,6 +202,12 @@ class VoiceDesignRequest(BaseModel):
         ge=0.25,
         le=4.0,
         description="The speed of the generated audio. Select a value from 0.25 to 4.0.",
+    )
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=4096,
+        description="Maximum number of new codec tokens to generate.",
     )
     normalization_options: Optional[NormalizationOptions] = Field(
         default_factory=NormalizationOptions,
