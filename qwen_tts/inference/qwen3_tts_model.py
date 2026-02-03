@@ -375,7 +375,7 @@ class Qwen3TTSModel:
             top_k=50,
             top_p=1.0,
             temperature=0.9,
-            repetition_penalty=1.05,
+            repetition_penalty=1.1,
             subtalker_dosample=True,
             subtalker_top_k=50,
             subtalker_top_p=1.0,
